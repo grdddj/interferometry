@@ -10,6 +10,14 @@ from enum import Enum
 from datetime import datetime
 
 
+class Mode(Enum):
+    """The different modes of the program."""
+
+    NORMAL = 1
+    NORMAL_AVERAGE = 2
+    FIT_SINUS = 3
+
+
 def get_new_image_dir() -> Path:
     """Creates and returns a new directory to save semiresults in, according to current date"""
     dir_to_save = Path(".") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -25,51 +33,28 @@ def is_in_script_args(arg: str) -> bool:
     return any(arg in script_arg for script_arg in sys.argv[1:])
 
 
-if is_in_script_args("print"):
-    PRINT = True
+PRINT = is_in_script_args("print")
+TAKE_JUST_TWO = is_in_script_args("take")
+SAVE_RESULT = not is_in_script_args("notsave")
+
+# Choose mode from script arguments, or default to NORMAL
+if is_in_script_args("norm"):
+    MODE = Mode.NORMAL
+elif is_in_script_args("avg"):
+    MODE = Mode.NORMAL_AVERAGE
+elif is_in_script_args("sin"):
+    MODE = Mode.FIT_SINUS
 else:
-    PRINT = False
+    MODE = Mode.NORMAL
 
-SAVE_RESULT = True
-
-
-class Mode(Enum):
-    """The different modes of the program."""
-
-    NORMAL = 1
-    NORMAL_AVERAGE = 2
-    FIT_SINUS = 3
-
-
-# Setting the current mode
-MODE = Mode.NORMAL
-
-
-# Default values
-TAKE_AVERAGE_OF_X = None
-FIT_BY_SINUS = False
-DEFAULT_P0 = []
-
-# Changing default values according to current mode
-if MODE == Mode.NORMAL_AVERAGE:
-    TAKE_AVERAGE_OF_X = 8
-elif MODE == Mode.FIT_SINUS:
-    FIT_BY_SINUS = True
-    DEFAULT_P0 = [30, 0.05, 0, 40]
+TAKE_AVERAGE_OF_X = 8 if MODE == Mode.NORMAL_AVERAGE else None
 
 PHOTO_INDEX = 0
 TOP_TO_BOTTOM_PHOTOS = [1, 2, 3, 4, 5, 6, 7, 9]
 CURRENT_IMAGE = ""
 
-ANGLE_START = (0, 64)
-ANGLE_END = (200, 224)
-
-TAKE_JUST_TWO = False
-TAKE_JUST_TWO = True
-
-# DEFAULT_P0 = [30, 0.2, 0, 40]
-
-INDEXES_OPERATIONS = {1: {}}
+ANGLE_START = (25, 110)
+ANGLE_END = (250, 270)
 
 
 def save_all_pictures(video_folder: Path, index_to_take: int = 0) -> None:
@@ -111,8 +96,9 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
     # Deciding where to take the "cut" on the image
     # (depends whether the photo is rightly horizontal or rotated)
     if PHOTO_INDEX in TOP_TO_BOTTOM_PHOTOS:
-        start = (0, position)
-        end = (image.shape[0] - 1, position)
+        OFFSET = 100
+        start = (OFFSET, position)
+        end = (image.shape[0] - OFFSET, position)
     else:
         start = ANGLE_START
         end = ANGLE_END
@@ -121,13 +107,7 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
     profile = skimage.measure.profile_line(image, start, end)
     values = [int(item[0]) for item in profile]
 
-    # Getting rid of extremes at the beginning and the end
-    del values[:25]
-    del values[-25:]
-    print("len(values)", len(values))
-    print(values)
-
-    if FIT_BY_SINUS:
+    if MODE == Mode.FIT_SINUS:
 
         def test_func_sinus(x, a, b, c, d) -> float:
             """Test function for fitting - a sinus one."""
@@ -138,17 +118,9 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
         y_data = np.array(values)
 
         # Getting the parameters from the fit
-        if (
-            PHOTO_INDEX in INDEXES_OPERATIONS
-            and "p0" in INDEXES_OPERATIONS[PHOTO_INDEX]
-        ):
-            p0 = INDEXES_OPERATIONS[PHOTO_INDEX]["p0"]
-        else:
-            # p0 = DEFAULT_P0
-            p0 = calculate_p0(x_data, y_data)
+        p0 = calculate_p0(x_data, y_data)
 
         params, _ = optimize.curve_fit(test_func_sinus, x_data, y_data, p0=p0)
-        print("params", params)
 
         # Constructing lowest and highest values from the fitted parameters
         lowest = params[-1] - abs(params[0])
@@ -168,12 +140,11 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
                 f"visibility: {get_v(biggest, lowest):.2f}"
             )
             ax[0].imshow(image)
-            ax[0].plot([start[1], end[1]], [start[0], end[0]], "r")
+            ax[0].plot([start[1], end[1]], [start[0], end[0]], "r", label="cut")
+            ax[0].legend()
 
-            ax[1].set_title("y_data")
-            ax[1].plot(y_data)
-
-            ax[1].set_title("Our values and sinus fit")
+            ax[1].set_title("Profile data and sinus fit")
+            ax[1].plot(y_data, label="Profile data")
             ax[1].plot(
                 x_data,
                 test_func_sinus(x_data, params[0], params[1], params[2], params[3]),
@@ -221,10 +192,8 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
             ax[0].set_xlabel("Pixels")
 
             ax[1].set_title("Profile / our filtered values")
-            ax[1].plot(profile)
-            ax[1].plot(raw_values, label="Our values")
+            ax[1].plot(raw_values, label="Profile values")
             ax[1].legend()
-            ax[1].set_ylabel("Profile value")
             ax[1].set_xlabel("Pixel index")
 
             if PRINT:
@@ -268,11 +237,7 @@ def get_visibility_from_photo(photo: Path) -> float:
 
     avg_big = sum(BIGGEST) // len(BIGGEST)
     avg_low = sum(LOWESTS) // len(LOWESTS)
-    print("BIGGEST", BIGGEST)
-    print("LOWESTS", LOWESTS)
-
     visibility = get_v(avg_big, avg_low)
-    print("visibility", visibility)
 
     return visibility
 
@@ -298,11 +263,7 @@ def get_visibility_graph(photo_folder: Path) -> None:
 
     # Plot the final result together with some useful information
     plt.plot(V_VALUES)
-    plt.title(
-        f"Visibility\n"
-        f"Mode: {MODE.name}\n"
-        f"{DEFAULT_P0=}, {TAKE_AVERAGE_OF_X=}, {ANGLE_START=}, {ANGLE_END=}"
-    )
+    plt.title(f"Visibility\n" f"Mode: {MODE.name}\n")
     plt.ylabel("Visibility")
     plt.xlabel("Image index")
 
