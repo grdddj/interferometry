@@ -1,3 +1,12 @@
+"""
+Getting a visibility graph from a collection of photos.
+
+These photos can be automatically generated from the collection of
+measurement videos.
+
+Saves results from each run of this script into its own directory.
+"""
+
 import sys
 from datetime import datetime
 from enum import Enum
@@ -34,12 +43,11 @@ if is_in_script_args("norm"):
     MODE = Mode.NORMAL
 elif is_in_script_args("avg"):
     MODE = Mode.NORMAL_AVERAGE
+    # Look into script arguments for the number of images to average, if there
+    AVG_OF_X = 5  # default
     for script_arg in sys.argv[1:]:
-        if "avg" in script_arg:
+        if "avg=" in script_arg:
             AVG_OF_X = int(script_arg.split("=")[1])
-            break
-    else:
-        AVG_OF_X = 5
 elif is_in_script_args("sin"):
     MODE = Mode.FIT_SINUS
 else:
@@ -65,8 +73,13 @@ class InterProfile:
 
         self.PHOTO_INDEX = 0
         self.CURRENT_IMAGE = ""
-        self.TOP_TO_BOTTOM_PHOTOS = [1, 2, 3, 4, 5, 6, 7, 9]
 
+        # Indexes of pictures that are correctly horizontal (all others are rotated)
+        self.TOP_TO_BOTTOM_PHOTOS = [1, 2, 3, 4, 5, 6, 7, 9]
+        # How many pixels to neglect both from top and bottom for horizontal pictures
+        self.VERTICAL_OFFSET = 100
+
+        # Coordinates of where to cut the rotated picture to get profile
         self.ANGLE_START = (25, 110)
         self.ANGLE_END = (250, 270)
 
@@ -132,9 +145,8 @@ class InterProfile:
         # Deciding where to take the "cut" on the image
         # (depends whether the photo is rightly horizontal or rotated)
         if self.PHOTO_INDEX in self.TOP_TO_BOTTOM_PHOTOS:
-            offset = 100
-            start = (offset, position)
-            end = (image.shape[0] - offset, position)
+            start = (self.VERTICAL_OFFSET, position)
+            end = (image.shape[0] - self.VERTICAL_OFFSET, position)
         else:
             start = self.ANGLE_START
             end = self.ANGLE_END
@@ -153,7 +165,7 @@ class InterProfile:
             x_data = np.array(list(range(len(values))))
             y_data = np.array(values)
 
-            # Getting the parameters from the fit
+            # Get the initial guess for the parameters
             p0 = self._calculate_p0(x_data, y_data)
 
             # Get the sinus fit parameters
@@ -259,8 +271,7 @@ class InterProfile:
         )  # excluding the zero frequency "peak", which is related to offset
         guess_amp = 3 * np.std(y_data) * 2.0**0.5
         guess_offset = np.mean(y_data)
-        guess = np.array([guess_amp, 2.0 * np.pi * guess_freq, 0.0, guess_offset])
-        return tuple(guess)
+        return (guess_amp, 2 * np.pi * guess_freq, 0.0, guess_offset)
 
     @staticmethod
     def _get_new_image_dir() -> Path:
@@ -272,7 +283,6 @@ class InterProfile:
     @staticmethod
     def _save_picture(video: Path, index_to_take: int = 0) -> None:
         """Saves a screenshot from a video."""
-        # TODO: simplify to take just the first one
         vidcap = cv2.VideoCapture(str(video))
         success, image = vidcap.read()
         count = 0
@@ -292,9 +302,9 @@ class InterProfile:
         return 5 < item < 1000
 
     @staticmethod
-    def _get_v(imax: float, imin: float) -> float:
+    def _get_v(i_max: float, i_min: float) -> float:
         """Calculates the V value according to the minimum and maximum."""
-        return (imax - imin) / (imax + imin)
+        return (i_max - i_min) / (i_max + i_min)
 
 
 if __name__ == "__main__":
