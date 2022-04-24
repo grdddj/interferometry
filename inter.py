@@ -1,13 +1,14 @@
+import sys
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import List, Tuple
-from matplotlib import pyplot as plt
-import skimage
+from typing import Tuple
+
 import cv2
 import numpy as np
+import skimage
+from matplotlib import pyplot as plt
 from scipy import optimize
-import sys
-from enum import Enum
-from datetime import datetime
 
 
 class Mode(Enum):
