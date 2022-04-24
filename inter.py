@@ -39,31 +39,23 @@ class Mode(Enum):
     NORMAL = 1
     NORMAL_AVERAGE = 2
     FIT_SINUS = 3
-    FIT_4_GRADE_POLYN = 4
 
 
 # Setting the current mode
-MODE = Mode.FIT_SINUS
+MODE = Mode.NORMAL
 
 
 # Default values
 TAKE_AVERAGE_OF_X = None
-FIT = False
 FIT_BY_SINUS = False
-FIT_4_GRADE_POLYN = False
 DEFAULT_P0 = []
 
 # Changing default values according to current mode
 if MODE == Mode.NORMAL_AVERAGE:
     TAKE_AVERAGE_OF_X = 8
 elif MODE == Mode.FIT_SINUS:
-    FIT = True
     FIT_BY_SINUS = True
     DEFAULT_P0 = [30, 0.05, 0, 40]
-elif MODE == Mode.FIT_4_GRADE_POLYN:
-    FIT = True
-    FIT_4_GRADE_POLYN = True
-    DEFAULT_P0 = [1, 1, 1, 1, 1]
 
 PHOTO_INDEX = 0
 TOP_TO_BOTTOM_PHOTOS = [1, 2, 3, 4, 5, 6, 7, 9]
@@ -135,15 +127,11 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
     print("len(values)", len(values))
     print(values)
 
-    if FIT:
+    if FIT_BY_SINUS:
 
         def test_func_sinus(x, a, b, c, d) -> float:
             """Test function for fitting - a sinus one."""
             return a * np.sin(b * x + c) + d
-
-        def test_func_4_grade_polyn(x, a, b, c, d, e) -> float:
-            """Test function for fitting - a polynominal one."""
-            return a * x**4 + b * x**3 + c * x**2 + d * x + e
 
         # Need to convert python lists to numpy arrays
         x_data = np.array(list(range(len(values))))
@@ -159,14 +147,7 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
             # p0 = DEFAULT_P0
             p0 = calculate_p0(x_data, y_data)
 
-        if FIT_BY_SINUS:
-            params, _ = optimize.curve_fit(test_func_sinus, x_data, y_data, p0=p0)
-        elif FIT_4_GRADE_POLYN:
-            params, _ = optimize.curve_fit(
-                test_func_4_grade_polyn, x_data, y_data, p0=p0
-            )
-        else:
-            raise RuntimeError("No fitting method selected")
+        params, _ = optimize.curve_fit(test_func_sinus, x_data, y_data, p0=p0)
         print("params", params)
 
         # Constructing lowest and highest values from the fitted parameters
@@ -192,22 +173,12 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
             ax[1].set_title("y_data")
             ax[1].plot(y_data)
 
-            if FIT_BY_SINUS:
-                ax[1].set_title("Our values and sinus fit")
-                ax[1].plot(
-                    x_data,
-                    test_func_sinus(x_data, params[0], params[1], params[2], params[3]),
-                    label="Sinus fit",
-                )
-            elif FIT_4_GRADE_POLYN:
-                ax[1].set_title("Our values and polynominal fit")
-                ax[1].plot(
-                    x_data,
-                    test_func_4_grade_polyn(
-                        x_data, params[0], params[1], params[2], params[3], params[4]
-                    ),
-                    label="Polynominal fit",
-                )
+            ax[1].set_title("Our values and sinus fit")
+            ax[1].plot(
+                x_data,
+                test_func_sinus(x_data, params[0], params[1], params[2], params[3]),
+                label="Sinus fit",
+            )
             ax[1].legend()
 
             if SAVE_RESULT:
