@@ -64,8 +64,8 @@ CURRENT_IMAGE = ""
 ANGLE_START = (0, 64)
 ANGLE_END = (200, 224)
 
-TAKE_JUST_TWO = True
 TAKE_JUST_TWO = False
+TAKE_JUST_TWO = True
 
 # DEFAULT_P0 = [30, 0.2, 0, 40]
 
@@ -165,7 +165,7 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
                 f"p0: {list(round(x, 2) for x in p0)}\n"
                 f"params: {list(round(x, 2) for x in params)}\n"
                 f"lowest: {lowest:.2f}, biggest: {biggest:.2f}\n"
-                f"visiblity: {get_v(biggest, lowest):.2f}"
+                f"visibility: {get_v(biggest, lowest):.2f}"
             )
             ax[0].imshow(image)
             ax[0].plot([start[1], end[1]], [start[0], end[0]], "r")
@@ -181,14 +181,13 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
             )
             ax[1].legend()
 
-            if SAVE_RESULT:
-                plt.tight_layout()
-                my_dpi = 96
-                fig.set_size_inches(14, 8)
-                plt.savefig(NEW_IMAGE_DIRECTORY / f"{PHOTO_INDEX}.jpg", dpi=my_dpi)
-                plt.close(fig)  # Closing the figure so that it is not shown
-            elif PRINT:
+            if PRINT:
                 plt.show()
+            elif SAVE_RESULT:
+                plt.tight_layout()
+                fig.set_size_inches(14, 8)
+                plt.savefig(NEW_IMAGE_DIRECTORY / f"{PHOTO_INDEX}.jpg", dpi=96)
+                plt.close(fig)  # Closing the figure so that it is not shown
     else:
         # So that we can show it in the picture
         raw_values = values.copy()
@@ -206,18 +205,35 @@ def get_lowest_and_biggest_intensity(image, position: int) -> tuple[float, float
             lowest = values[0]
 
         # Optionally show the photo together with the profile
-        if PRINT:
+        if PRINT or SAVE_RESULT:
             fig, ax = plt.subplots(1, 2)
+
             ax[0].set_title(
-                f"{MODE.name=}\n{PHOTO_INDEX=}\n{CURRENT_IMAGE}\n{lowest=}, {biggest=}\n{get_v(biggest, lowest)=}"
+                f"Mode: {MODE.name}\n"
+                f"Index: {PHOTO_INDEX}\n"
+                f"Image: {CURRENT_IMAGE}\n"
+                f"lowest: {lowest:.2f}, biggest: {biggest:.2f}\n"
+                f"visibility: {get_v(biggest, lowest):.2f}"
             )
             ax[0].imshow(image)
             ax[0].plot([start[1], end[1]], [start[0], end[0]], "r")
+            ax[0].set_ylabel("Pixels")
+            ax[0].set_xlabel("Pixels")
+
             ax[1].set_title("Profile / our filtered values")
             ax[1].plot(profile)
             ax[1].plot(raw_values, label="Our values")
             ax[1].legend()
-            plt.show()
+            ax[1].set_ylabel("Profile value")
+            ax[1].set_xlabel("Pixel index")
+
+            if PRINT:
+                plt.show()
+            elif SAVE_RESULT:
+                plt.tight_layout()
+                fig.set_size_inches(14, 8)
+                plt.savefig(NEW_IMAGE_DIRECTORY / f"{PHOTO_INDEX}.jpg", dpi=96)
+                plt.close(fig)  # Closing the figure so that it is not shown
 
     return lowest, biggest
 
@@ -283,12 +299,14 @@ def get_visibility_graph(photo_folder: Path) -> None:
     # Plot the final result together with some useful information
     plt.plot(V_VALUES)
     plt.title(
-        f"Visibility\n{FIT_BY_SINUS=}, {DEFAULT_P0=}, {TAKE_AVERAGE_OF_X=}, {ANGLE_START=}, {ANGLE_END=}"
+        f"Visibility\n"
+        f"Mode: {MODE.name}\n"
+        f"{DEFAULT_P0=}, {TAKE_AVERAGE_OF_X=}, {ANGLE_START=}, {ANGLE_END=}"
     )
     plt.ylabel("Visibility")
+    plt.xlabel("Image index")
 
     plt.savefig(NEW_IMAGE_DIRECTORY / "RESULT.jpg")
-
     plt.show()
 
 
