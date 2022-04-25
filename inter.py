@@ -7,6 +7,7 @@ measurement videos.
 Saves results from each run of this script into its own directory.
 """
 
+import math
 import sys
 from datetime import datetime
 from enum import Enum
@@ -69,7 +70,7 @@ class InterProfile:
         self.TAKE_JUST_TWO = TAKE_JUST_TWO
         self.AVG_OF_X = AVG_OF_X
 
-        self.NEW_IMAGE_DIRECTORY = self._get_new_image_dir()
+        self.NEW_IMAGE_DIRECTORY = self._get_new_image_dir(comment=self.MODE.name)
 
         self.PHOTO_INDEX = 0
         self.CURRENT_IMAGE = ""
@@ -79,9 +80,10 @@ class InterProfile:
         # How many pixels to neglect both from top and bottom for horizontal pictures
         self.VERTICAL_OFFSET = 100
 
-        # Coordinates of where to cut the rotated picture to get profile
+        # Coordinates of start and length of the cut of the rotated picture to get profile
+        # End will be determined automatically according to the angle
         self.ANGLE_START = (25, 110)
-        self.ANGLE_END = (250, 270)
+        self.CUT_LENGTH = 50
 
     def get_visibility_graph(self, photo_folder: Path) -> None:
         V_VALUES: list[float] = []
@@ -120,37 +122,117 @@ class InterProfile:
     def _get_visibility_from_photo(self, photo: Path) -> float:
         image = skimage.io.imread(photo)
 
-        # Exactly in half vertically
-        positions = [image.shape[1] // 2]
-
-        LOWESTS: list[float] = []
-        BIGGEST: list[float] = []
-
-        # Aggregating all the positions into its average
-        for position in positions:
-            low, big = self._get_lowest_and_biggest_intensity(image, position)
-            LOWESTS.append(low)
-            BIGGEST.append(big)
-
-        avg_big = sum(BIGGEST) // len(BIGGEST)
-        avg_low = sum(LOWESTS) // len(LOWESTS)
-        visibility = self._get_v(avg_big, avg_low)
-
-        return visibility
-
-    def _get_lowest_and_biggest_intensity(
-        self, image, position: int
-    ) -> tuple[float, float]:
-        """Calculates the lowest and biggest intensity of the image at the given position."""
         # Deciding where to take the "cut" on the image
         # (depends whether the photo is rightly horizontal or rotated)
         if self.PHOTO_INDEX in self.TOP_TO_BOTTOM_PHOTOS:
-            start = (self.VERTICAL_OFFSET, position)
-            end = (image.shape[0] - self.VERTICAL_OFFSET, position)
+            # Exactly in half vertically
+            middle_vertical = image.shape[1] // 2
+            start = (self.VERTICAL_OFFSET, middle_vertical)
+            end = (image.shape[0] - self.VERTICAL_OFFSET, middle_vertical)
         else:
+            black_start = self._get_black_start(photo)
+            angle = self._get_angle(photo, black_start)
+            perpendicular_angle = 90 - angle
+            radian_perpendicular_angle = math.radians(perpendicular_angle)
             start = self.ANGLE_START
-            end = self.ANGLE_END
+            end = (
+                self.ANGLE_START[0]
+                + self.CUT_LENGTH * math.cos(radian_perpendicular_angle),
+                self.ANGLE_START[1]
+                + self.CUT_LENGTH * math.sin(radian_perpendicular_angle),
+            )
 
+        low, big = self._get_lowest_and_biggest_intensity(image, start, end)
+
+        visibility = self._get_v(low, big)
+
+        return visibility
+
+    def _get_angle(self, photo: Path, black_start: tuple[int, int]) -> int:
+        """Get the angle of the black line so that we can cut the picture perpendicular to it."""
+        image = skimage.io.imread(photo)
+
+        start_x = black_start[0]
+        start_y = black_start[1]
+
+        degrees_thresholds = {}
+        for degrees in range(91):
+            radians = degrees * 2 * np.pi / 360
+
+            # Make the length as long as possible
+            length = int(start_x / math.cos(radians))
+            if length + start_y > image.shape[1]:
+                length = image.shape[1] - start_y
+
+            end = (
+                int(start_x - np.cos(radians) * length),
+                int(start_y + np.sin(radians) * length),
+            )
+
+            profile = skimage.measure.profile_line(image, black_start, end)
+            values = [int(item[0]) for item in profile]
+            values.sort()
+
+            # 90 percent of values are less that the threshold
+            threshold = values[int(len(values) * 0.9)]
+            degrees_thresholds[degrees] = threshold
+
+        lowest = min(degrees_thresholds.items(), key=lambda x: x[1])
+
+        return lowest[0]
+
+    def _get_black_start(self, photo: Path) -> tuple[int, int]:
+        """Find out a black start point of the profile. Needed to find out the angle."""
+        image = skimage.io.imread(photo)
+
+        # Taking two lines next to each other and creating an average of them
+        start_x = 200
+        y = 20
+        start1 = (start_x, y)
+        start2 = (start_x, y + 1)
+        end1 = (500, y)
+        end2 = (500, y + 1)
+
+        values1 = [
+            int(item[0]) for item in skimage.measure.profile_line(image, start1, end1)
+        ]
+        values2 = [
+            int(item[0]) for item in skimage.measure.profile_line(image, start2, end2)
+        ]
+        values = [values1[i] + values2[i] for i in range(len(values1))]
+        values = [item // 2 for item in values]
+
+        values_copy = values.copy()
+        values.sort()
+
+        # 20 percent of values are less that the threshold
+        threshold = values[int(len(values) * 0.2)]
+
+        # Finding all the streaks of pixels that are below the threshold
+        found = False
+        indexes = []
+        new_indexes = []
+        for index, val in enumerate(values_copy):
+            if val < threshold:
+                found = True
+                new_indexes.append(index)
+            else:
+                if found:
+                    found = False
+                    indexes.append(new_indexes)
+                    new_indexes = []
+
+        # Extracting the longest streak
+        indexes.sort(key=len, reverse=True)
+        indexes_to_take = indexes[0]
+        index_to_take = indexes_to_take[len(indexes_to_take) // 2]
+
+        return (start_x + index_to_take, y)
+
+    def _get_lowest_and_biggest_intensity(
+        self, image, start: tuple[int, int], end: tuple[int, int]
+    ) -> tuple[float, float]:
+        """Calculates the lowest and biggest intensity of the image at the given position."""
         # Extract the real colour profile and take the integer values from it
         profile = skimage.measure.profile_line(image, start, end)
         values = [int(item[0]) for item in profile]
@@ -186,7 +268,7 @@ class InterProfile:
                     f"p0: {list(round(x, 2) for x in p0)}\n"
                     f"params: {list(round(x, 2) for x in params)}\n"
                     f"lowest: {lowest:.2f}, biggest: {biggest:.2f}\n"
-                    f"visibility: {self._get_v(biggest, lowest):.2f}"
+                    f"visibility: {self._get_v(lowest, biggest):.2f}"
                 )
                 ax[0].imshow(image)
                 ax[0].plot([start[1], end[1]], [start[0], end[0]], "r", label="cut")
@@ -235,7 +317,7 @@ class InterProfile:
                     f"Index: {self.PHOTO_INDEX}\n"
                     f"Image: {self.CURRENT_IMAGE}\n"
                     f"lowest: {lowest:.2f}, biggest: {biggest:.2f}\n"
-                    f"visibility: {self._get_v(biggest, lowest):.2f}"
+                    f"visibility: {self._get_v(lowest, biggest):.2f}"
                 )
                 ax[0].imshow(image)
                 ax[0].plot([start[1], end[1]], [start[0], end[0]], "r")
@@ -274,9 +356,14 @@ class InterProfile:
         return (guess_amp, 2 * np.pi * guess_freq, 0.0, guess_offset)
 
     @staticmethod
-    def _get_new_image_dir() -> Path:
+    def _get_new_image_dir(comment: str | None) -> Path:
         """Creates and returns a new directory to save semiresults in, according to current date"""
-        dir_to_save = Path(".") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        if comment:
+            dir_to_save = Path(".") / (
+                datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + f"_{comment}"
+            )
+        else:
+            dir_to_save = Path(".") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         dir_to_save.mkdir(parents=True, exist_ok=True)
         return dir_to_save
 
@@ -302,7 +389,7 @@ class InterProfile:
         return 5 < item < 1000
 
     @staticmethod
-    def _get_v(i_max: float, i_min: float) -> float:
+    def _get_v(i_min: float, i_max: float) -> float:
         """Calculates the V value according to the minimum and maximum."""
         return (i_max - i_min) / (i_max + i_min)
 
