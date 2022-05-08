@@ -1,24 +1,22 @@
 import math
-from pathlib import Path
 
 import numpy as np
 import skimage
 
-from helpers import file_cache
+from helpers import Point, file_cache
 
 
 @file_cache("perpendicular_angle.json")
 def get_perpendicular_angle(photo_path: str) -> int:
-    black_start = _get_black_start(photo_path)
-    angle = _get_angle(photo_path, black_start)
+    image = skimage.io.imread(photo_path)
+    black_start = _get_black_start(image)
+    angle = _get_angle(image, black_start)
     perpendicular_angle = 90 - angle
     return perpendicular_angle
 
 
-def _get_black_start(photo: str | Path) -> tuple[int, int]:
+def _get_black_start(image) -> Point:
     """Find out a black start point of the profile. Needed to find out the angle."""
-    image = skimage.io.imread(photo)
-
     # Taking two lines next to each other and creating an average of them
     start_x = 200
     y = 20
@@ -64,10 +62,8 @@ def _get_black_start(photo: str | Path) -> tuple[int, int]:
     return (start_x + index_to_take, y)
 
 
-def _get_angle(photo: str | Path, black_start: tuple[int, int]) -> int:
+def _get_angle(image, black_start: Point) -> int:
     """Get the angle of the black line so that we can cut the picture perpendicular to it."""
-    image = skimage.io.imread(photo)
-
     start_x = black_start[0]
     start_y = black_start[1]
 

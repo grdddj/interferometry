@@ -3,6 +3,8 @@ import json
 import sys
 from typing import Callable, Dict
 
+Point = tuple[int, int]
+
 
 def is_in_script_args(arg: str) -> bool:
     """Checks if an argument is contained in the script arguments."""

@@ -18,6 +18,18 @@ TAKE_JUST_TWO = is_in_script_args("take")
 SAVE_RESULT = not is_in_script_args("notsave")
 AVG_OF_X = None
 
+# Optionally getting the cut length
+CUT_LENGTH = 100  # default
+for script_arg in sys.argv[1:]:
+    if "length=" in script_arg:
+        CUT_LENGTH = int(script_arg.split("=")[1])
+
+# Optionally getting the cut length
+CUT_AMOUNT = 1  # default
+for script_arg in sys.argv[1:]:
+    if "cuts=" in script_arg:
+        CUT_AMOUNT = int(script_arg.split("=")[1])
+
 # Choose mode from script arguments, or default to NORMAL
 if is_in_script_args("norm"):
     MODE = Mode.NORMAL
@@ -39,7 +51,8 @@ if __name__ == "__main__":
         MODE=MODE,
         PRINT=PRINT,
         SAVE_RESULT=SAVE_RESULT,
-        TAKE_JUST_TWO=TAKE_JUST_TWO,
+        CUT_LENGTH=CUT_LENGTH,
+        CUT_AMOUNT=CUT_AMOUNT,
         AVG_OF_X=AVG_OF_X,
     )
     # interfero_profile.save_all_pictures(Path("videos"), 5)
