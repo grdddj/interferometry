@@ -3,6 +3,7 @@ Main class InterProfile for getting a visibility graph.
 """
 
 import math
+import random
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -42,6 +43,14 @@ class InterProfile:
         self.CUT_AMOUNT = CUT_AMOUNT
         self.AVG_OF_X = AVG_OF_X
 
+        max_x = 600 - self.CUT_LENGTH
+        max_y = 700 - self.CUT_LENGTH
+        self.ALL_START_POINTS: list[Point] = []
+        for _ in range(self.CUT_AMOUNT):
+            start_x = random.randint(0, max_x)
+            start_y = random.randint(0, max_y)
+            self.ALL_START_POINTS.append((start_x, start_y))
+
         self.NEW_IMAGE_DIRECTORY = self._get_new_image_dir(comment=self.MODE.name)
 
         self.CURRENT_PHOTO_INDEX = 0
@@ -66,7 +75,10 @@ class InterProfile:
             v_value = self._get_visibility_from_photo(photo)
             V_VALUES.append(v_value)
 
-        print("V_VALUES", V_VALUES)
+        # Save results to a file
+        with open(self.NEW_IMAGE_DIRECTORY / "RESULT.txt", "w") as f:
+            for v_value in V_VALUES:
+                f.write(f"{v_value:.3f}\n")
 
         # Plot the final result together with some useful information
         plt.plot(V_VALUES)
@@ -77,6 +89,7 @@ class InterProfile:
         plt.ylabel("Visibility")
         plt.xlabel("Image index")
 
+        plt.tight_layout()
         plt.savefig(self.NEW_IMAGE_DIRECTORY / "RESULT.jpg")
         plt.show()
 
@@ -88,10 +101,40 @@ class InterProfile:
 
     def _get_visibility_from_photo(self, photo: Path) -> float:
         image = skimage.io.imread(photo)
+        lows = []
+        bigs = []
 
-        start, end = self._get_start_and_end_coords(image)
-        low, big = self._get_lowest_and_biggest_intensity(image, start, end)
+        all_cuts = self._get_all_cuts(image)
+        for start, end in all_cuts:
+            low, big = self._get_lowest_and_biggest_intensity(image, start, end)
+            lows.append(low)
+            bigs.append(big)
+
+        big = sum(bigs) // len(bigs)
+        low = sum(lows) // len(lows)
+
         return self._get_visibility(low, big)
+
+    def _get_all_cuts(self, image) -> list[tuple[Point, Point]]:
+        if self.CURRENT_PHOTO_INDEX in self.TOP_TO_BOTTOM_PHOTOS:
+            # Exactly in half vertically
+            middle_vertical = image.shape[1] // 2
+            start = (self.VERTICAL_OFFSET, middle_vertical)
+            end = (image.shape[0] - self.VERTICAL_OFFSET, middle_vertical)
+            return [(start, end)]
+
+        perpendicular_angle = get_perpendicular_angle(self.CURRENT_IMAGE_NAME)
+        all_cuts: list[tuple[Point, Point]] = []
+        for start_point in self.ALL_START_POINTS:
+            end_x = start_point[0] + self.CUT_LENGTH * math.cos(
+                math.radians(perpendicular_angle)
+            )
+            end_y = start_point[1] + self.CUT_LENGTH * math.sin(
+                math.radians(perpendicular_angle)
+            )
+            all_cuts.append((start_point, (int(end_x), int(end_y))))
+
+        return all_cuts
 
     def _get_start_and_end_coords(self, image) -> tuple[Point, Point]:
         """Returns the start and end coordinates of the cut."""
@@ -144,41 +187,6 @@ class InterProfile:
             # Constructing lowest and highest values from the fitted parameters
             lowest = params[-1] - abs(params[0])
             biggest = params[-1] + abs(params[0])
-
-            # Saving or showing the semiresults
-            if self.PRINT or self.SAVE_RESULT:
-                fig, ax = plt.subplots(1, 2)
-
-                ax[0].set_title(
-                    f"Mode: {self.MODE.name}\n"
-                    f"Index: {self.CURRENT_PHOTO_INDEX}\n"
-                    f"Image: {self.CURRENT_IMAGE_NAME}\n"
-                    f"p0: {list(round(x, 2) for x in p0)}\n"
-                    f"params: {list(round(x, 2) for x in params)}\n"
-                    f"lowest: {lowest:.2f}, biggest: {biggest:.2f}\n"
-                    f"visibility: {self._get_visibility(lowest, biggest):.2f}"
-                )
-                ax[0].imshow(image)
-                ax[0].plot([start[1], end[1]], [start[0], end[0]], "r", label="cut")
-                ax[0].set_ylabel("Pixels")
-                ax[0].set_xlabel("Pixels")
-                ax[0].legend()
-
-                ax[1].set_title("Profile data and sinus fit")
-                ax[1].plot(y_data, label="Profile data")
-                ax[1].plot(
-                    x_data,
-                    test_func_sinus(x_data, params[0], params[1], params[2], params[3]),
-                    label="Sinus fit",
-                )
-                ax[1].set_xlabel("Pixel index")
-                ax[1].set_ylabel("Brightness")
-                ax[1].legend()
-
-                if self.PRINT:
-                    plt.show()
-                elif self.SAVE_RESULT:
-                    self._save_result(plt, fig)
         else:
             # So that we can show it in the picture
             raw_values = values.copy()
@@ -194,34 +202,6 @@ class InterProfile:
             else:
                 biggest = values[-1]
                 lowest = values[0]
-
-            # Optionally show the photo together with the profile
-            if self.PRINT or self.SAVE_RESULT:
-                fig, ax = plt.subplots(1, 2)
-
-                ax[0].set_title(
-                    f"Mode: {self.MODE.name}\n"
-                    f"Index: {self.CURRENT_PHOTO_INDEX}\n"
-                    f"Image: {self.CURRENT_IMAGE_NAME}\n"
-                    f"lowest: {lowest:.2f}, biggest: {biggest:.2f}\n"
-                    f"visibility: {self._get_visibility(lowest, biggest):.2f}"
-                )
-                ax[0].imshow(image)
-                ax[0].plot([start[1], end[1]], [start[0], end[0]], "r", label="cut")
-                ax[0].set_ylabel("Pixels")
-                ax[0].set_xlabel("Pixels")
-                ax[0].legend()
-
-                ax[1].set_title("Profile")
-                ax[1].plot(raw_values, label="Profile values")
-                ax[1].set_xlabel("Pixel index")
-                ax[1].set_ylabel("Brightness")
-                ax[1].legend()
-
-                if self.PRINT:
-                    plt.show()
-                elif self.SAVE_RESULT:
-                    self._save_result(plt, fig)
 
         return lowest, biggest
 
