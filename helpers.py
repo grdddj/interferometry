@@ -8,7 +8,15 @@ Point = tuple[int, int]
 
 def is_in_script_args(arg: str) -> bool:
     """Checks if an argument is contained in the script arguments."""
-    return any(arg in script_arg for script_arg in sys.argv[1:])
+    return any(script_arg.startswith(arg) for script_arg in sys.argv[1:])
+
+
+def get_value_from_script_args(arg: str, default: str) -> str:
+    for script_arg in sys.argv[1:]:
+        if script_arg.startswith(arg):
+            return script_arg.split(arg, maxsplit=1)[1]
+
+    return default
 
 
 def file_cache(
